@@ -1,4 +1,6 @@
 ---
+import Analytics from '@vercel/analytics/astro';
+import SpeedInsights from '@vercel/speed-insights/astro';
 import '../styles/tokens.css';
 import '../styles/reset.css';
 import '../styles/global.css';
@@ -65,5 +67,7 @@ const {
   <body>
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <slot />
+    <Analytics />
+    <SpeedInsights />
   </body>
 </html>
