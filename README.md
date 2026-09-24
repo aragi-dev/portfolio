@@ -19,7 +19,6 @@ Deploy: **https://aragi.me**
 | vite (transitivo vía Astro) | 8.3.0 |
 | ttfx (vendoreado) | 0.3.2 |
 
-> Versiones exactas sin `^` + `bun.lock` commiteado = proyecto congelado.
 
 El motor de efectos `ttfx` está vendoreado sin modificar bajo `public/ttfx/`
 (build wasm + `LICENSE` y `NOTICE` originales).
@@ -56,12 +55,3 @@ public/
 - **ChrisBuilds** — [TerminalTextEffects](https://github.com/ChrisBuilds/terminaltexteffects)
   original, del cual ttfx es un port a Rust.
 - **Equipo de Astro** — el framework.
-
-## Nota conocida
-
-`astro check` está bloqueado por upstream: TypeScript 7 ya no expone API
-programática (`withastro/roadmap#1321`). Fallback mientras tanto:
-
-```sh
-bunx tsc --noEmit
-```
