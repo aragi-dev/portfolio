@@ -1,5 +1,3 @@
-// Profile data — the wordmark reads profile.name.
-
 export interface Profile {
   name: string;
   role: string;

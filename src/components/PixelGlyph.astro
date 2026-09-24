@@ -1,12 +1,4 @@
 ---
-// PixelGlyph — every pixel mask on the page (ARAGI / INFO wordmarks,
-// envelope, check, github, linkedin) in one component: pixel-grid SVG
-// mask over the 5-band grayscale gradient (see lib/palette). Bitmaps and
-// the wordmark anchor metadata live in lib/glyph-bitmaps; only those
-// vary per glyph. Wordmarks additionally carry the canvas lattice
-// attributes (data-wordmark et al.) and the inline gradient background —
-// PixelField validates them, so keep them exact. Decorative only
-// (aria-hidden); surrounding content carries the accessible names.
 import { GLYPHS, type GlyphName } from "../lib/glyph-bitmaps";
 import { WORDMARK_GRADIENT } from "../lib/palette";
 
@@ -19,7 +11,6 @@ const spec = GLYPHS[glyph];
 const rows = spec.rows;
 const wordmark = spec.wordmark;
 
-// Chunky cell multiplier, same for every mask.
 const cell = 2;
 
 function glyphCells(cellSize: number): { x: number; y: number }[] {
@@ -39,7 +30,6 @@ const width = bitmapWidth * cell;
 const height = bitmapHeight * cell;
 const cells = glyphCells(cell);
 
-// Guard against empty grids.
 const gridWidth = Math.max(width, cell);
 const gridHeight = Math.max(height, cell);
 
@@ -54,8 +44,6 @@ const svg =
   `shape-rendering="crispEdges" fill="#fff">${rects}</svg>`;
 const maskImage = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 
-// Unscaled bitmap size anchors the canvas lattice
-// (cell = slotWidth / cols, same text at scale 1).
 const unscaled = { width: bitmapWidth, height: bitmapHeight };
 
 const style = wordmark

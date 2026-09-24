@@ -14,7 +14,6 @@ import "../styles/hero-pixel.css";
 </section>
 
 <script>
-  // Keyboard replay control: dispatch a window event the canvas listens for.
   const replayButton = document.querySelector(
     ".hero-pixel [data-replay]",
   );
@@ -23,14 +22,8 @@ import "../styles/hero-pixel.css";
     window.dispatchEvent(new window.CustomEvent("porfolio:replay"));
   });
 
-  // The byline is live DOM (not a canvas word), so its entrance is a CSS
-  // animation. Re-trigger it on the same replay event the wordmark flight
-  // listens to: its delay keeps it landing after the flight, like on boot.
   const byline = document.querySelector(".hero-pixel .hero-byline");
 
-  // Boot gating, same rule as the canvas flight in PixelField: browsers
-  // restore scroll on reload, so when the hero loads off-screen the
-  // byline rests static instead of playing its entrance unseen.
   const heroSection = document.querySelector(".hero-pixel");
   if (
     byline instanceof HTMLElement &&
@@ -52,7 +45,6 @@ import "../styles/hero-pixel.css";
       return;
     }
     byline.classList.remove("hero-byline-enter");
-    // Force reflow so re-adding the class restarts the keyframes.
     void byline.offsetWidth;
     byline.classList.add("hero-byline-enter");
   });

@@ -52,7 +52,6 @@ import "../styles/hero-pixel.css";
 </section>
 
 <script>
-  // Email copy with a clipboard fallback for older browsers.
   const emailButton = document.querySelector(
     ".info-section .info-email",
   );
@@ -62,15 +61,7 @@ import "../styles/hero-pixel.css";
   const checkIcon = emailButton.querySelector(".pixel-check");
   const copyFeedback = emailButton.querySelector("[data-copy-feedback]");
 
-  // Entrance for the bio text + email button (the pixel icon rides
-  // inside the button). SSR carries info-enter + info-enter-boot so a
-  // section that loads on screen rises right after the INFO flight.
-  // When it loads off-screen the classes are dropped and the first
-  // scroll into view replays them with no delay, once — same gating
-  // rule as the hero byline and the canvas boot flight.
   const infoBox = document.querySelector(".info-section .info-box");
-  // Every entrance target: bio text, email button, social row. New
-  // .info-enter children join automatically.
   const infoTargets = infoBox instanceof HTMLElement
     ? Array.from(infoBox.querySelectorAll(".info-enter")).filter(
       (el) => el instanceof HTMLElement,
@@ -112,7 +103,6 @@ import "../styles/hero-pixel.css";
       }
     }
   } else {
-    // Reduced motion or unexpected DOM: content stays static and visible.
     for (const el of infoTargets) {
       if (el instanceof HTMLElement) {
         el.classList.remove("info-enter", "info-enter-boot");
@@ -120,12 +110,8 @@ import "../styles/hero-pixel.css";
     }
   }
 
-  /** @type {number} */
   let copyTimer = 0;
 
-  // Copy the email address with a clipboard fallback for older browsers.
-  // The address text never changes: feedback swaps the envelope icon for
-  // the pixel check and announces through the live region.
   emailButton?.addEventListener("click", async () => {
     if (!(emailButton instanceof HTMLButtonElement)) return;
     const address =
@@ -133,9 +119,6 @@ import "../styles/hero-pixel.css";
       emailText?.textContent ||
       emailButton.textContent ||
       "";
-    /**
-     * @returns {void}
-     */
     const showFeedback = () => {
       envelopeIcon?.classList.add("is-hidden");
       checkIcon?.classList.remove("is-hidden");
@@ -171,7 +154,6 @@ import "../styles/hero-pixel.css";
         document.body.removeChild(area);
         showFeedback();
       } catch (_fallbackErr) {
-        /* copy is best-effort; keep the address visible */
       }
     }
   });

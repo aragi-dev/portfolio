@@ -1,7 +1,3 @@
-// ARAGI wordmark bitmap, 57x19 cells.
-// A and R are traced from the omarchy.org wordmark letterforms (same 19-row
-// grid, stroke and stepped corners); G follows their C with a mid bar;
-// I matches the same rhythm. '1' = lit cell, '0' = empty.
 export const ARAGI_WIDTH = 57;
 export const ARAGI_HEIGHT = 19;
 
@@ -27,11 +23,6 @@ export const ARAGI_ROWS: readonly string[] = [
   "000000000000011100010000000000000000000000000000000000000",
 ];
 
-
-// INFO wordmark bitmap, 47x19 cells.
-// I reuses the ARAGI I letterform (same 11 columns); N, F and O are drawn
-// in the same 19-row style (3-cell strokes, stepped top/bottom bars,
-// single-column gaps between letters). '1' = lit cell, '0' = empty.
 export const INFO_WIDTH = 47;
 export const INFO_HEIGHT = 19;
 

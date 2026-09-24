@@ -1,15 +1,4 @@
 ---
-// PixelField — fixed viewport background plus scroll-scrubbed content:
-// dim value-noise Bayer field plus two resting wordmarks (hero ARAGI,
-// info INFO) anchored to their SSR slots. The field is PURE BACKGROUND:
-// a viewport-spanning lattice (rebuilt on resize only) whose paint reads
-// no scroll and no progress — only the ambient clock (tSec) for
-// noise drift + twinkle — so scrolling never moves or erodes it.
-// Disintegration applies to the content only: every content row owns a
-// progress value derived ONLY from its document position versus the
-// viewport (never from time), and each row indexes its baked ttfx strip
-// with idx = clamp(round(progress * maxFrame)). Boot keeps its single
-// scattered intro flight; rest is static at home.
 ---
 
 <canvas class="pixel-field" aria-hidden="true"></canvas>
@@ -17,42 +6,6 @@
 
 <script>
   // @ts-check
-  /**
-   * PixelField scroll canvas — typed JS (JSDoc only, no runtime change).
-   *
-   * The script runs as plain JS in the browser; `// @ts-check` lets the
-   * editor type-check it without a build step. All annotations below are
-   * comments: they never affect runtime.
-   *
-   * @typedef {{ x: number, y: number }} Pixel
-   * @typedef {{ i: number, j: number, x: number, y: number, cx: number, cy: number, shade: number, jitter: number, phase: number, bayer: number }} FieldCell
-   * @typedef {{ bx: number, by: number }} WordCell
-   * @typedef {{ active: boolean, start: number, duration: number }} ReplayState
-   * @typedef {{ left: number, top: number, width: number, height: number, right: number, bottom: number }} WordRect
-   * @typedef {{ el: Element, text: string, bitmap: readonly string[], cols: number, rows: number, cells: WordCell[], rowCells: WordCell[][], rect: WordRect, cell: number, replay: ReplayState, strip: import("../lib/ttfx-bridge").BakedStrip | null, banded: import("../lib/ttfx-bridge").PaintPrim[][][] | null }} WordState
-   * @typedef {{ el: Element, rect: WordRect, columns: number, rows: number, cell: number, strip: import("../lib/ttfx-bridge").BakedStrip | null, banded: import("../lib/ttfx-bridge").PaintPrim[][][] | null, ready: boolean }} DomState
-   * @typedef {{ x: number, y: number, active: boolean, level: number }} PointerState
-   * @typedef {Object} FieldState
-   * @property {boolean} reduced
-   * @property {boolean} fine
-   * @property {boolean} visible
-   * @property {boolean} running
-   * @property {number} raf
-   * @property {number} cssW
-   * @property {number} cssH
-   * @property {number} dpr
-   * @property {number} field
-   * @property {number} fieldCols
-   * @property {number} fieldRows
-   * @property {number} maxDist
-   * @property {FieldCell[]} fieldCells
-   * @property {WordState[]} words
-   * @property {DomState[]} doms
-   * @property {PointerState} pointer
-   * @property {number} scrollDir
-   * @property {number} lastScrollY
-   * @property {number} bootMs
-   */
   import { ARAGI_ROWS, INFO_ROWS } from "../lib/aragi-bitmap";
   import {
     DOM_CELL_PX,
@@ -74,10 +27,6 @@
     bandForFraction,
   } from "../lib/palette";
 
-  // Resting palette lives in lib/palette (single source with the CSS
-  // tokens): only dim grays; brighter bands appear near the pointer.
-
-  // Classic 8x8 Bayer matrix (0..63), row-major.
   const BAYER_8 = [
     0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36,
     14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41,
@@ -86,87 +35,33 @@
   ];
 
   const MAX_DPR = 2;
-  const POINTER_RADIUS = 110; // CSS px glow radius
-  const POINTER_EASE = 0.3; // per-frame interpolation toward presence target
+  const POINTER_RADIUS = 110;
+  const POINTER_EASE = 0.3;
   const FALLBACK_MS = 5000;
 
-  // Replay stagger for the single boot/replay flight: per-cell
-  // delay window (0..0.45) ordered by row, then a 0.55 flight from the
-  // dispersed position home. The scroll scrub never uses these
-  // constants; it reads no clock.
   const SCATTER_DELAY = 0.45;
   const SCATTER_DUR = 0.55;
-  // Boot and replay run the same scattered flight on a clock.
   const INTRO_MS = 1600;
-  // Boot-only background entrance: the field dots fade in eased over
-  // this window while the words fly. Words are unaffected (their cells
-  // paint at full alpha); resize and reveal never re-fade.
   const BG_FADE_MS = 1200;
   const REPLAY_SLOP_PX = 8;
 
-  // Pure scroll-scrub disintegration (no clocks, no triggers). Every row
-  // owns a progress value in DOCUMENT space, computed from its document
-  // top yDoc, its height h, the scroll offset and the viewport height:
-  //   yv = yDoc - scrollY (viewport coords)
-  //   pTop = clamp((MARGIN - yv) / (MARGIN + h), 0, 1)  (exits top)
-  //   pBot = clamp((yv + h - (vh - MARGIN)) / (MARGIN + h), 0, 1)  (exits bottom)
-  //   progress = max(pTop, pBot)  (symmetric: exits top erode top->bottom,
-  //     exits bottom erode bottom->top = the two original animations)
-  // and each wordmark row indexes its baked strip with the user formula
-  //   idx = clamp(round(progress * maxFrame), 0, maxFrame).
-  // MARGIN = SCRUB_MARGIN_FRAC * viewport height (erosion starts while the
-  // row is still visible, completes exactly as it leaves the viewport).
   const SCRUB_MARGIN_FRAC = 0.25;
-  // Bake pacing: steps/s handed to the Session as its frame rate. The bake
-  // steps every run to completion regardless, so this only shapes the arc
-  // itself; 300 matches the measured Round-2 arcs (~3.2s typical).
   const BAKE_STEPS_PER_SECOND = 300;
   const BAKE_EFFECT_DEFAULT = "crumble";
-  // Incremental-bake scheduling: each paint-loop pass pumps the active
-  // bake job until BAKE_SLICE_MS elapses, stepping
-  // BAKE_ENGINE_STEPS_PER_SLICE engine frames per step() call. 8ms
-  // keeps every init task (bake slice + paint) under ~25ms; 16 steps
-  // cost ~1-3ms per call on the measured inputs (ARAGI ~0.07ms/step,
-  // DOM scale ~0.16ms/step), so a slice holds several calls from
-  // whichever phase is active (stepping, decode, metric).
   const BAKE_SLICE_MS = 8;
   const BAKE_ENGINE_STEPS_PER_SLICE = 16;
-  // Resting ink bands for baked-strip prim colors: SCRUB_BANDS from
-  // lib/palette (darkest first).
 
-  /**
-   * @param {number} value
-   * @param {number} min
-   * @param {number} max
-   * @returns {number}
-   */
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
 
-  /**
-   * Register a pointer handler without tripping the generic
-   * EventListener overload. Pass-through at runtime.
-   * @param {EventTarget} target
-   * @param {string} type
-   * @param {(event: PointerEvent) => void} fn
-   * @returns {void}
-   */
   function on(target, type, fn) {
     target.addEventListener(
       type,
-      /** @type {EventListener} */ (fn),
+      (fn),
     );
   }
 
-  // Deterministic 2D hash -> [0, 1). Integer mix, no Math.random,
-  // so jitter/phase stay fixed per cell across frames.
-  /**
-   * @param {number} ix
-   * @param {number} iy
-   * @param {number} seed
-   * @returns {number}
-   */
   function hash01(ix, iy, seed) {
     let h =
       (Math.imul(ix, 374761393) +
@@ -178,42 +73,20 @@
     return (h >>> 0) / 4294967296;
   }
 
-  /**
-   * @param {number} t
-   * @returns {number}
-   */
   function fade(t) {
     return t * t * (3 - 2 * t);
   }
 
-  /**
-   * @param {number} a
-   * @param {number} b
-   * @param {number} t
-   * @returns {number}
-   */
   function lerp(a, b, t) {
     return a + (b - a) * t;
   }
 
-  // Cubic easing for the scattered flight.
-  /**
-   * @param {number} t
-   * @returns {number}
-   */
   function easeInOutCubic(t) {
     if (t < 0.5) return 4 * t * t * t;
     const u = 1 - t;
     return 1 - 4 * u * u * u;
   }
 
-  // Single-octave value noise with smooth interpolation.
-  /**
-   * @param {number} x
-   * @param {number} y
-   * @param {number} seed
-   * @returns {number}
-   */
   function valueNoise(x, y, seed) {
     const xi = Math.floor(x);
     const yi = Math.floor(y);
@@ -228,45 +101,16 @@
     return lerp(lerp(a, b, u), lerp(c, d, u), v);
   }
 
-  // Two octaves, seeded. Callers drift the sample point with time.
-  /**
-   * @param {number} x1
-   * @param {number} y1
-   * @param {number} x2
-   * @param {number} y2
-   * @returns {number}
-   */
   function noise2Octaves(x1, y1, x2, y2) {
     return (
       0.65 * valueNoise(x1, y1, 11) + 0.35 * valueNoise(x2, y2, 77)
     );
   }
 
-  /**
-   * @param {number} by
-   * @param {number} rows
-   * @returns {string}
-   */
   function bandForRow(by, rows) {
     return bandForFraction((by + 0.5) / Math.max(1, rows));
   }
 
-  // Pure row progress in document space (the content disintegration
-  // contract: words + DOM only — the field never calls this). Feeds ONLY
-  // on scrollY, row geometry, viewport height and margin: no clock, no
-  // timer, no accumulated state. When scroll rests, yv rests, so progress
-  // (and the frame index) cannot change; when scroll reverses, progress
-  // falls and the same frames are traversed backwards. Top component
-  // erodes while exiting past the top edge (top->bottom); bottom
-  // component while exiting past the bottom edge (bottom->top).
-  /**
-   * @param {number} yDoc row document top
-   * @param {number} h row height
-   * @param {number} scrollY current scroll offset
-   * @param {number} vh viewport height
-   * @param {number} margin edge zone (SCRUB_MARGIN_FRAC * vh)
-   * @returns {number} 0 whole (inside) .. 1 gone (past an edge)
-   */
   function rowProgress(yDoc, h, scrollY, vh, margin) {
     const yv = yDoc - scrollY;
     const progressTop = clamp((margin - yv) / (margin + h), 0, 1);
@@ -274,33 +118,18 @@
     return Math.max(progressTop, progressBottom);
   }
 
-  // The user formula, verbatim: idx = clamp(round(progress * maxFrame)).
-  /**
-   * @param {number} progress 0..1 row progress
-   * @param {number} maxFrame strip endpoint
-   * @returns {number} frame index into the baked strip
-   */
   function scrubIndex(progress, maxFrame) {
     return clamp(Math.round(progress * maxFrame), 0, maxFrame);
   }
 
-  /**
-   * @returns {void}
-   */
   function initAll() {
-    /** @type {HTMLCanvasElement[]} */
     const canvases = Array.prototype.slice.call(
       document.querySelectorAll("canvas.pixel-field"),
     );
     canvases.forEach(initField);
   }
 
-  /**
-   * @param {HTMLCanvasElement} canvas
-   * @returns {void}
-   */
   function initField(canvas) {
-    /** @type {Element[]} */
     let slots = [];
     try {
       slots = Array.prototype.slice.call(
@@ -311,42 +140,26 @@
       return;
     }
 
-    // The SSR slots stay visible until the canvas proves it can paint.
-    // Once the first frame lands, the slots hide and the canvas owns
-    // both words. Reduced motion never hides the slots: the static SSR
-    // wordmark is the resting word and the canvas paints field only.
-    /** @type {boolean} */
     let painted = false;
-    /**
-     * @returns {void}
-     */
     const finishSlotsVisible = () => {
       try {
         slots.forEach((slot) => slot.classList.remove("is-hidden"));
       } catch (_err) {
-        /* never hide the wordmarks on failure */
       }
     };
-    /**
-     * @returns {void}
-     */
     const hideSlotsAfterFirstPaint = () => {
       if (painted) return;
       painted = true;
       try {
         slots.forEach((slot) => slot.classList.add("is-hidden"));
       } catch (_err) {
-        /* canvas still draws; slot visibility is best-effort */
       }
     };
 
-    // Safety net: the SSR wordmarks come back only if the canvas
-    // never manages a first paint.
     window.setTimeout(() => {
       if (!painted) finishSlotsVisible();
     }, FALLBACK_MS);
 
-    /** @type {CanvasRenderingContext2D | null} */
     let ctx = null;
     try {
       ctx = canvas.getContext("2d");
@@ -358,16 +171,9 @@
       finishSlotsVisible();
       return;
     }
-    // Non-null alias for closures below (guarded above).
-    const context = /** @type {CanvasRenderingContext2D} */ (ctx);
+    const context = (ctx);
 
-    // Overlay canvas for DOM disintegration ONLY: fixed, above the DOM
-    // content, pointer-transparent (CSS), so the live DOM underneath
-    // stays fully interactive. Nullable on purpose: a missing overlay
-    // context disables DOM disintegration and nothing else.
-    /** @type {HTMLCanvasElement | null} */
     let overlayCanvas = null;
-    /** @type {CanvasRenderingContext2D | null} */
     let domContext = null;
     try {
       const overlay = document.querySelector("canvas.pixel-dom-overlay");
@@ -389,7 +195,6 @@
         ? window.matchMedia("(pointer: fine)")
         : null;
 
-    /** @type {FieldState} */
     const state = {
       reduced: reduceQuery ? reduceQuery.matches : false,
       fine: fineQuery ? fineQuery.matches : false,
@@ -413,21 +218,12 @@
       bootMs: 0,
     };
 
-    // Cached ttfx load; resolves null on any failure (no document,
-    // failed fetch, bad wasm). Never throws; a null module means no
-    // bake, and every word simply stays whole.
-    /** @type {import("../lib/ttfx-bridge").TtfxModule | null} */
     let ttfxMod = null;
-    /** @type {Promise<import("../lib/ttfx-bridge").TtfxModule | null> | null} */
     let ttfxPromise = null;
 
-    /**
-     * @returns {Promise<import("../lib/ttfx-bridge").TtfxModule | null>}
-     */
     function ensureTtfx() {
       if (ttfxMod) return Promise.resolve(ttfxMod);
       if (!ttfxPromise) {
-        /** @type {Promise<import("../lib/ttfx-bridge").TtfxModule | null>} */
         let pending;
         try {
           pending = loadTtfx();
@@ -445,10 +241,7 @@
       return ttfxPromise;
     }
 
-    // Build one word per SSR anchor. The data-text attribute selects
-    // the bitmap; data-cols/data-rows must match it and are validated.
     try {
-      /** @type {WordState[]} */
       const words = [];
       for (let s = 0; s < slots.length; s += 1) {
         const el = slots[s];
@@ -460,7 +253,6 @@
         const attrCols = parseInt(el.getAttribute("data-cols") || "0", 10);
         const attrRows = parseInt(el.getAttribute("data-rows") || "0", 10);
         if (attrCols !== cols || attrRows !== rows) continue;
-        /** @type {WordCell[]} */
         const cells = [];
         for (let by = 0; by < rows; by += 1) {
           for (let bx = 0; bx < cols; bx += 1) {
@@ -469,7 +261,6 @@
           }
         }
         if (!cells.length) continue;
-        /** @type {WordCell[][]} */
         const rowCells = [];
         for (let by = 0; by < rows; by += 1) rowCells.push([]);
         for (let k = 0; k < cells.length; k += 1) {
@@ -500,15 +291,10 @@
       return;
     }
 
-    // Every [data-disintegrate] element participates generically
-    // (0..n): geometry is measured like the word anchors, the raster +
-    // strip bake at init, and the overlay paints per-row scrub frames.
-    // The live DOM is never touched: no hiding, no replacement.
     try {
       const marked = Array.prototype.slice.call(
         document.querySelectorAll("[data-disintegrate]"),
       );
-      /** @type {DomState[]} */
       const doms = [];
       for (let d = 0; d < marked.length; d += 1) {
         doms.push({
@@ -527,21 +313,10 @@
       state.doms = [];
     }
 
-    /**
-     * @param {WordState} word
-     * @param {number} by
-     * @returns {string}
-     */
     function restInkAt(word, by) {
       return bandForRow(by, word.rows);
     }
 
-    // Pointer glow 0..1 for a cell center, eased by presence level.
-    /**
-     * @param {number} cx
-     * @param {number} cy
-     * @returns {number}
-     */
     function pointerGlowAt(cx, cy) {
       const level = state.pointer.level || 0;
       if (level <= 0.001 || !state.fine || state.reduced) return 0;
@@ -554,11 +329,6 @@
       return glow * level;
     }
 
-    // Eased pointer presence 0..1: interpolates toward the target each
-    // frame instead of switching on/off directly.
-    /**
-     * @returns {void}
-     */
     function updatePointerLevel() {
       const target =
         state.pointer.active && state.fine && !state.reduced ? 1 : 0;
@@ -568,16 +338,6 @@
         Math.abs(next - target) < 0.001 ? target : next;
     }
 
-    // Wordmark ink per cell: pointer glow lifts the resting band ink
-    // to crest (>0.45) or hover (>0.12).
-    /**
-     * @param {WordState} word
-     * @param {number} bx
-     * @param {number} by
-     * @param {number} cx
-     * @param {number} cy
-     * @returns {string}
-     */
     function wordmarkInk(word, bx, by, cx, cy) {
       const rest = restInkAt(word, by);
       const glow = pointerGlowAt(cx, cy);
@@ -586,23 +346,6 @@
       return rest;
     }
 
-    // Shared resting-field color: the exact luminance/Bayer pipeline
-    // drawField paints. Returns the ink or null when the cell stays dark.
-    // Both positions live in VIEWPORT space: (nx, ny) sample the drifting
-    // noise and (gx, gy) locate the pointer glow (the pointer lives on
-    // screen). The field never reads scroll: only tSec moves the texture.
-    /**
-     * @param {number} shade
-     * @param {number} jitter
-     * @param {number} phase
-     * @param {number} bayer
-     * @param {number} nx
-     * @param {number} ny
-     * @param {number} gx
-     * @param {number} gy
-     * @param {number} tSec
-     * @returns {string | null}
-     */
     function fieldDotColor(shade, jitter, phase, bayer, nx, ny, gx, gy, tSec) {
       const glowLevel = state.pointer.level || 0;
       const usePointer =
@@ -636,9 +379,6 @@
       return FIELD_DIM;
     }
 
-    /**
-     * @returns {number}
-     */
     function clockMs() {
       try {
         return performance.now();
@@ -647,21 +387,11 @@
       }
     }
 
-    /**
-     * @returns {void}
-     */
     function paintBackground() {
       context.fillStyle = FIELD_BG;
       context.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    // Paint one field dot with integer device pixels (no seams).
-    /**
-     * @param {number} xCss
-     * @param {number} yCss
-     * @param {string} color
-     * @returns {void}
-     */
     function paintFieldDot(xCss, yCss, color) {
       const dpr = state.dpr;
       const x0 = Math.round(xCss * dpr);
@@ -672,14 +402,6 @@
       context.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
     }
 
-    // Paint one word cell with integer device pixels (no seams).
-    /**
-     * @param {number} xCss
-     * @param {number} yCss
-     * @param {number} size
-     * @param {string} color
-     * @returns {void}
-     */
     function paintWordCell(xCss, yCss, size, color) {
       const dpr = state.dpr;
       const x0 = Math.round(xCss * dpr);
@@ -690,12 +412,6 @@
       context.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
     }
 
-    // Refresh every anchor rect (viewport coordinates: the canvas is
-    // fixed fullscreen, so client coords are canvas coords) and derive
-    // each word cell size from its anchor width.
-    /**
-     * @returns {void}
-     */
     function measureWords() {
       for (let w = 0; w < state.words.length; w += 1) {
         const word = state.words[w];
@@ -712,18 +428,10 @@
           const cell = rect.width / word.cols;
           if (Number.isFinite(cell) && cell > 0) word.cell = cell;
         } catch (_err) {
-          /* keep the last known geometry */
         }
       }
     }
 
-    // Refresh every disintegrating element's rect (viewport coordinates:
-    // the overlay is fixed fullscreen, so client coords are overlay
-    // coords). Same discipline as measureWords: refreshed on resize and
-    // every frame, keeping the last known geometry on failure.
-    /**
-     * @returns {void}
-     */
     function measureDom() {
       for (let d = 0; d < state.doms.length; d += 1) {
         const dom = state.doms[d];
@@ -738,20 +446,10 @@
             bottom: rect.bottom,
           };
         } catch (_err) {
-          /* keep the last known geometry */
         }
       }
     }
 
-    // Fixed viewport background lattice: spans the viewport (cssW x cssH)
-    // and is rebuilt on resize only, so scrolling never moves or churns
-    // it. The dot size follows the hero word cell so field and wordmark
-    // share a rhythm. The shade recipe is side bands with a vertical U
-    // (top presence, calm dip, bottom carpet) in plain viewport
-    // coordinates.
-    /**
-     * @returns {boolean}
-     */
     function rebuild() {
       const cssW = typeof window.innerWidth === "number"
         ? window.innerWidth
@@ -767,8 +465,6 @@
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
       context.setTransform(1, 0, 0, 1, 0, 0);
-      // The overlay shares the main canvas geometry (same fixed frame,
-      // same manual dpr scaling in every paint helper).
       try {
         if (overlayCanvas) {
           overlayCanvas.width = Math.round(cssW * dpr);
@@ -781,7 +477,6 @@
           }
         }
       } catch (_overlayErr) {
-        /* overlay sizing is best-effort */
       }
       state.maxDist =
         Math.sqrt((cssW / 2) * (cssW / 2) + (cssH / 2) * (cssH / 2)) || 1;
@@ -808,7 +503,6 @@
       state.fieldCols = fiMax + 1;
       state.fieldRows = fjMax + 1;
 
-      /** @type {FieldCell[]} */
       const fieldCells = [];
       for (let fj = 0; fj <= fjMax; fj += 1) {
         for (let fi = 0; fi <= fiMax; fi += 1) {
@@ -816,10 +510,6 @@
           const y = fj * field;
           const cx = x + field / 2;
           const shade = fieldShadeAt(cx, y + field / 2);
-          // Perf pre-filter: keep only cells that can pass the Bayer
-          // threshold on their own. The dynamic glow window below
-          // paints the skipped low-shade cells near the pointer, so
-          // glow has no dead zone.
           if (shade <= 0.001) continue;
           const jitter = hash01(fi, fj, 1237);
           const bayer =
@@ -842,19 +532,6 @@
       return true;
     }
 
-    // Shade recipe in plain viewport coordinates: side bands (not
-    // radial) with a vertical U. Density hangs off the left/right edges
-    // and reaches ~30% inward, so the middle stays clear for the wordmark
-    // at any viewport; the vertical runs full presence at the top, a calm
-    // dip past the middle, then a hard ramp into the bottom carpet.
-    // Calibrated against the reference field (side density ~0.085,
-    // carpet ~0.29). Shared by rebuild; the glow window below calls it
-    // for the pre-filtered cells.
-    /**
-     * @param {number} cx viewport x of the cell center
-     * @param {number} cy viewport y of the cell center
-     * @returns {number} shade 0..~1 (above 1 = hot bottom carpet)
-     */
     function fieldShadeAt(cx, cy) {
       const vh = state.cssH;
       const vw = state.cssW;
@@ -868,19 +545,6 @@
       return shape * vert * 0.45;
     }
 
-    // Fixed viewport background: dim grays only, as fine dots on the
-    // viewport lattice. Luminance mixes the shade-driven drifting
-    // 2-octave value noise with pointer glow (x0.6), summed before the
-    // Bayer threshold. The main loop visits the pre-filtered candidates
-    // (shade > 0.001); a small dynamic window around the pointer paints
-    // the skipped low-shade cells with the same pipeline, so glow keeps
-    // its wide radius and never shows a dead zone. Reads NO scroll and
-    // NO progress — only the ambient clock tSec for noise/twinkle.
-    /**
-     * @param {number} tSec
-     * @param {number} dotFade 0..1 boot entrance opacity for the dots only
-     * @returns {void}
-     */
     function drawField(tSec, dotFade) {
       paintBackground();
       context.globalAlpha = dotFade;
@@ -888,14 +552,6 @@
       context.globalAlpha = 1;
     }
 
-    // Field dots in viewport space. No erosion gate, no shared front, no
-    // rowProgress: every cell paints its resting pipeline every frame
-    // (modulo ambient noise/twinkle), so the background is pixel-stable
-    // across scroll. Words and DOM own the disintegration below.
-    /**
-     * @param {number} tSec
-     * @returns {void}
-     */
     function paintFieldDots(tSec) {
       const cells = state.fieldCells;
       const glowLevel = state.pointer.level || 0;
@@ -919,14 +575,6 @@
       if (usePointer) drawGlowWindow(tSec);
     }
 
-    // Dynamic glow window: re-evaluate the lattice around the pointer
-    // with the same shade/noise/twinkle/Bayer pipeline, covering the
-    // low-shade cells skipped by the pre-filter. Word cells always
-    // overpaint the field afterwards, so no word masking is needed.
-    /**
-     * @param {number} tSec
-     * @returns {void}
-     */
     function drawGlowWindow(tSec) {
       const f = state.field;
       if (!Number.isFinite(f) || f <= 0) return;
@@ -946,7 +594,6 @@
           const dist = Math.sqrt(pdx * pdx + pdy * pdy);
           if (dist >= POINTER_RADIUS) continue;
           const shade = fieldShadeAt(cx, cy);
-          // Candidates were already painted in the main loop.
           if (shade > 0.001) continue;
           const jitter = hash01(fi, fj, 1237);
           const bayer =
@@ -968,13 +615,6 @@
       }
     }
 
-    // One resting word row at home, with hover-aware ink. Scrub rows at
-    // index 0 paint exactly this, so the rest look never changes.
-    /**
-     * @param {WordState} word
-     * @param {number} r row band
-     * @returns {void}
-     */
     function paintWordRowHome(word, r) {
       const size = word.cell;
       if (!(size > 0)) return;
@@ -996,16 +636,6 @@
       }
     }
 
-    // Word renderer: the single temporal scattered flight (boot and
-    // replay) driven by a 0..1 clock. Negative progress paints the
-    // resting word at home. The scroll scrub lives in paintWordScrub
-    // below, never here: this function is the only word path that
-    // reads a clock.
-    /**
-     * @param {WordState} word
-     * @param {number} replayProgress negative selects the resting word
-     * @returns {void}
-     */
     function drawWord(word, replayProgress) {
       if (!(replayProgress >= 0)) {
         for (let r = 0; r < word.rows; r += 1) paintWordRowHome(word, r);
@@ -1023,7 +653,6 @@
         const c = cells[k];
         const homeX = rect.left + c.bx * size;
         const homeY = rect.top + c.by * size;
-        // Replay stagger only: 0 leads, SCATTER_DELAY trails.
         const rowT = vh > 0 ? clamp((homeY + size / 2) / vh, 0, 1) : 0.5;
         const delay = dir >= 0
           ? SCATTER_DELAY * (1 - rowT)
@@ -1049,16 +678,6 @@
       }
     }
 
-    // One baked-strip prim at its word-grid position. Pad prims (dust
-    // outside the grid) paint where the effect put them, coords as-is;
-    // they are only GATED by the nearest row band (see paintWordScrub).
-    // Ink follows the 5 gray bands by luma.
-    /**
-     * @param {import("../lib/ttfx-bridge").PaintPrim} prim
-     * @param {WordRect} rect
-     * @param {number} size
-     * @returns {void}
-     */
     function paintStripPrim(prim, rect, size) {
       const x = rect.left + prim.col * size;
       const y = rect.top + prim.row * size;
@@ -1123,20 +742,6 @@
       }
     }
 
-    // Scroll-scrubbed word: EACH ROW owns its frame index into the
-    // element's baked strip. Rows at index 0 paint the real rest state;
-    // rows above 0 paint the strip frame's prims whose row band is theirs
-    // (band = clamp(prim.row, 0, rows - 1), so pad dust gates with the
-    // nearest row). idx feeds ONLY on scrollY, geometry and margin:
-    // still scroll = still frame, reversed scroll = the same frames
-    // backwards. No clock is read here (nor anywhere in the scrub).
-    /**
-     * @param {WordState} word
-     * @param {number} scrollY
-     * @param {number} vh
-     * @param {number} margin
-     * @returns {void}
-     */
     function paintWordScrub(word, scrollY, vh, margin) {
       const size = word.cell;
       if (!(size > 0)) return;
@@ -1166,22 +771,11 @@
           try {
             paintStripPrim(band[k], rect, size);
           } catch (_err) {
-            /* one bad prim never kills the frame */
           }
         }
       }
     }
 
-    // Integer device-px rect on the DOM overlay (no seams). Guards the
-    // nullable overlay context: without it DOM disintegration is off.
-    /**
-     * @param {number} xCss
-     * @param {number} yCss
-     * @param {number} wCss
-     * @param {number} hCss
-     * @param {string} color
-     * @returns {void}
-     */
     function paintDomRect(xCss, yCss, wCss, hCss, color) {
       if (!domContext) return;
       const dpr = state.dpr;
@@ -1196,30 +790,10 @@
       domContext.fillRect(x0, y0, w, h);
     }
 
-    // Erase one DOM row band: page background over the row's cell band
-    // region, so the live DOM row visually disappears in cell units and
-    // the baked dust below can take its place.
-    /**
-     * @param {DomState} dom
-     * @param {number} r raster row band
-     * @param {number} rowH live row height (rect.height / rows)
-     * @returns {void}
-     */
     function paintDomErase(dom, r, rowH) {
       paintDomRect(dom.rect.left, dom.rect.top + r * rowH, dom.rect.width, rowH, FIELD_BG);
     }
 
-    // One baked-strip prim over a disintegrating element, in that
-    // element's grid space (col/row * DOM_CELL_PX from its live origin).
-    // Blocks paint as remaining chunks, parts/lines/marks as dust; ink
-    // follows the prim rgb snapped through the resting bands. Pad dust
-    // outside the grid paints where the effect put it (gated by band
-    // only, like the words). Mirrors paintStripPrim onto the overlay.
-    /**
-     * @param {import("../lib/ttfx-bridge").PaintPrim} prim
-     * @param {DomState} dom
-     * @returns {void}
-     */
     function paintDomPrim(prim, dom) {
       if (!domContext) return;
       const size = dom.cell;
@@ -1281,21 +855,6 @@
       }
     }
 
-    // DOM scroll scrub on the overlay: EACH raster row owns its frame
-    // index into the element's baked strip via the SAME pure formula as
-    // the words (rowProgress/scrubIndex over document-space rows from
-    // the live rect + raster row height). Rows at index 0 paint
-    // NOTHING: the real DOM shows crisp and interactive. Rows above 0
-    // erase their band (page background) and paint the strip frame's
-    // prims for that band. No clock is read here (nor anywhere in the
-    // scrub). Reduced motion never reaches the painter: the overlay
-    // stays clear and the DOM is untouched.
-    /**
-     * @param {number} scrollY
-     * @param {number} vh
-     * @param {number} margin
-     * @returns {void}
-     */
     function paintDomScrub(scrollY, vh, margin) {
       if (!domContext || !overlayCanvas) return;
       domContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
@@ -1323,44 +882,25 @@
             try {
               paintDomPrim(band[k], dom);
             } catch (_err) {
-              /* one bad prim never kills the frame */
             }
           }
         }
       }
     }
 
-    // Effect override for trials without redeploy (omarchy-site ?etch=
-    // pattern): ?curtain=<effect>, default "crumble". It now selects the
-    // BAKE effect (one strip per wordmark). Unknown names fail inside
-    // the bake (null) and the word simply stays whole.
-    /**
-     * @returns {string}
-     */
     function bakeEffect() {
       try {
         const q = new URLSearchParams(window.location.search).get("curtain");
         if (q && q.length > 0 && q.length < 64) return q;
       } catch (_err) {
-        /* default below */
       }
       return BAKE_EFFECT_DEFAULT;
     }
 
-    // Bucket one finished strip's frames by row band (band = clamped
-    // prim row, so pad dust gates with the nearest row). Frames are
-    // shared by reference with the strip; banded[0] stays empty because
-    // index 0 always paints the live rest state. Never throws.
-    /**
-     * @param {import("../lib/ttfx-bridge").BakedStrip} strip
-     * @returns {import("../lib/ttfx-bridge").PaintPrim[][][] | null}
-     */
     function bucketBanded(strip) {
       try {
-        /** @type {import("../lib/ttfx-bridge").PaintPrim[][][]} */
         const banded = [];
         for (let f = 0; f <= strip.maxFrame; f += 1) {
-          /** @type {import("../lib/ttfx-bridge").PaintPrim[][]} */
           const byRow = [];
           for (let r = 0; r < strip.rows; r += 1) byRow.push([]);
           banded.push(byRow);
@@ -1378,44 +918,18 @@
       }
     }
 
-    // Incremental bake scheduler: strips bake in BAKE_SLICE_MS slices
-    // pumped from the paint loop (pumpBakes), words first then DOM
-    // elements, one BakeJob at a time. A strip joins the scrub ONLY on
-    // completion (word.strip / dom.ready flip together with the banded
-    // buckets): before that the element paints whole, and a null strip
-    // leaves it whole forever. The slice clock (clockMs) budgets INIT
-    // work only; the scrub never reads it (see the purity point in
-    // frame()). Reduced motion never queues: abortBakes drops the queue,
-    // the active job and any raster still in flight.
-    /** @typedef {{ kind: "word" | "dom", word: WordState | null, dom: DomState | null }} BakeTask */
-    /** @typedef {{ task: BakeTask, job: import("../lib/ttfx-bridge").BakeJob }} ActiveBake */
-    /** @type {import("../lib/ttfx-bridge").TtfxModule | null} */
     let bakeMod = null;
-    /** @type {BakeTask[]} */
     let bakeQueue = [];
-    /** @type {ActiveBake | null} */
     let bakeCurrent = null;
-    /** @type {boolean} */
     let bakeWaiting = false;
-    /** @type {boolean} */
     let bakeKicked = false;
-    /** @type {number} */
     let bakeGen = 0;
 
-    // Enqueue every unbaked strip, words first then DOM elements. The
-    // paint loop pumps the queue (pumpBakes); this only arms it. Skips
-    // elements that already baked (motion-toggle re-entry), so re-arming
-    // after abortBakes is safe. Never throws.
-    /**
-     * @param {import("../lib/ttfx-bridge").TtfxModule} mod
-     * @returns {void}
-     */
     function queueBakes(mod) {
       try {
         if (bakeKicked || state.reduced) return;
         bakeKicked = true;
         bakeMod = mod;
-        /** @type {BakeTask[]} */
         const queue = [];
         for (let w = 0; w < state.words.length; w += 1) {
           if (!state.words[w].strip) {
@@ -1429,19 +943,9 @@
         }
         bakeQueue = queue;
       } catch (_err) {
-        /* baking stays off; elements stay whole */
       }
     }
 
-    // Dequeue into bakeCurrent. Word tasks begin synchronously (one
-    // Session construct per call, words before any DOM work); DOM tasks
-    // first rasterize async and report "not started" while the raster
-    // is in flight. Returns true when a job is ready to step. A null
-    // job (invalid input, unknown effect, engine throw) leaves that
-    // element whole and the queue moves on. Never throws.
-    /**
-     * @returns {boolean}
-     */
     function startNextBake() {
       const mod = bakeMod;
       if (!mod) {
@@ -1456,7 +960,6 @@
           if (!word || word.strip) continue;
           let job = null;
           try {
-            /** @type {Array<{ col: number, row: number }>} */
             const cells = word.cells.map((c) => ({ col: c.bx, row: c.by }));
             job = beginBake(mod, {
               cells,
@@ -1475,12 +978,8 @@
         }
         const dom = task.dom;
         if (!dom || dom.ready) continue;
-        // DOM geometry is async (clone + fonts + image + pixels): park
-        // the pump until the raster lands. bakeGen guards the motion
-        // toggle racing the raster.
         const gen = bakeGen;
         bakeWaiting = true;
-        /** @type {Promise<import("../lib/dom-raster").DomRaster | null> | null} */
         let pending = null;
         try {
           pending = rasterizeCells(dom.el, DOM_CELL_PX);
@@ -1498,7 +997,6 @@
             if (!raster || raster.cells.length === 0) return;
             let job = null;
             try {
-              /** @type {Array<{ col: number, row: number }>} */
               const cells = raster.cells.map((c) => ({ col: c.col, row: c.row }));
               job = beginBake(bakeMod, {
                 cells,
@@ -1523,18 +1021,10 @@
       return false;
     }
 
-    // Complete the active job: assemble its strip and flip it (with its
-    // banded buckets) into the scrub in one step, so the element goes
-    // from whole to scrubbed with no partial strip in between. A null
-    // strip (failed bake) leaves the element whole. Never throws.
-    /**
-     * @returns {void}
-     */
     function finishBakeCurrent() {
       const active = bakeCurrent;
       bakeCurrent = null;
       if (!active) return;
-      /** @type {import("../lib/ttfx-bridge").BakedStrip | null} */
       let strip = null;
       try {
         strip = active.job.finish();
@@ -1544,7 +1034,6 @@
       try {
         active.job.free();
       } catch (_freeErr) {
-        /* already settled */
       }
       if (!strip || strip.maxFrame <= 0) return;
       const banded = bucketBanded(strip);
@@ -1564,10 +1053,6 @@
       }
     }
 
-    // Abort the active job without publishing it. Never throws.
-    /**
-     * @returns {void}
-     */
     function abortBakeCurrent() {
       const active = bakeCurrent;
       bakeCurrent = null;
@@ -1575,17 +1060,9 @@
       try {
         active.job.free();
       } catch (_err) {
-        /* already settled */
       }
     }
 
-    // Drop all bake work: the queue, the active job, and any raster
-    // still in flight (its generation goes stale), and re-arm queueing
-    // so leaving reduced motion bakes the rest. Elements keep painting
-    // whole. Never throws.
-    /**
-     * @returns {void}
-     */
     function abortBakes() {
       try {
         bakeGen += 1;
@@ -1595,19 +1072,9 @@
         bakeKicked = false;
         abortBakeCurrent();
       } catch (_err) {
-        /* baking stays off */
       }
     }
 
-    // Pump the bake queue inside the slice budget: step the active job
-    // (BAKE_ENGINE_STEPS_PER_SLICE engine steps per step() call) until
-    // BAKE_SLICE_MS elapses, starting and finishing jobs as the budget
-    // allows. Called from frame() so baking shares the paint loop and
-    // never posts its own timers. Reads clockMs for the budget ONLY —
-    // no scrub index (here or anywhere) reads time. Never throws.
-    /**
-     * @returns {void}
-     */
     function pumpBakes() {
       try {
         if (!bakeMod || state.reduced || bakeWaiting) return;
@@ -1630,19 +1097,9 @@
           if (!more) finishBakeCurrent();
         }
       } catch (_err) {
-        /* baking stays off; elements stay whole */
       }
     }
 
-    // Integer device-px rect for prim fragments (no seams).
-    /**
-     * @param {number} xCss
-     * @param {number} yCss
-     * @param {number} wCss
-     * @param {number} hCss
-     * @param {string} color
-     * @returns {void}
-     */
     function paintPrimRect(xCss, yCss, wCss, hCss, color) {
       const dpr = state.dpr;
       const x0 = Math.round(xCss * dpr);
@@ -1656,10 +1113,6 @@
       context.fillRect(x0, y0, w, h);
     }
 
-    /**
-     * @param {number} nowMs
-     * @returns {void}
-     */
     function frame(nowMs) {
       state.raf = 0;
       if (!state.visible || state.reduced || document.hidden) {
@@ -1668,25 +1121,11 @@
       }
       const tSec = nowMs / 1000;
       if (!state.bootMs) state.bootMs = nowMs;
-      // Boot-only background entrance, eased: 0 on the first frame, 1
-      // once BG_FADE_MS elapses. Time-derived like the replay flight;
-      // the scroll scrub below still reads no clock.
       const fieldFade = fade(clamp((nowMs - state.bootMs) / BG_FADE_MS, 0, 1));
       measureWords();
       measureDom();
       updatePointerLevel();
-      // INIT work, not scrub state: pump the bake queue in its slice
-      // budget (words first, then DOM). pumpBakes reads the clock to
-      // bound its own slice only; the scrub indices below still feed on
-      // scrollY plus geometry and the margin constant alone.
       pumpBakes();
-      // Purity point: the ONLY scroll-derived values below are scrollY
-      // (plus geometry measured above and the margin constant) feeding
-      // the CONTENT scrub (words + DOM). The field reads NO scroll and
-      // NO progress — only tSec for ambient noise/twinkle — so its cells
-      // never churn with scroll. tSec also feeds the boot/replay flight,
-      // never a disintegration index. The shared rAF loop may repaint at
-      // 60fps, but the scrub STATE cannot advance with time.
       const scrollY = typeof window.scrollY === "number"
         ? window.scrollY
         : 0;
@@ -1695,9 +1134,6 @@
       drawField(tSec, fieldFade);
       for (let w = 0; w < state.words.length; w += 1) {
         const word = state.words[w];
-        // Anchor rects are measured above. The only clock here feeds the
-        // single-shot boot/replay flight (drawWord); the scrub branch
-        // reads scroll only.
         if (word.replay.active) {
           const rp = (nowMs - word.replay.start) / word.replay.duration;
           if (rp >= 1) {
@@ -1710,16 +1146,11 @@
           paintWordScrub(word, scrollY, vh, margin);
         }
       }
-      // DOM overlay last: it erases + dusts disintegrating rows above
-      // the content and paints nothing wherever rows are whole.
       paintDomScrub(scrollY, vh, margin);
       hideSlotsAfterFirstPaint();
       state.raf = window.requestAnimationFrame(frame);
     }
 
-    /**
-     * @returns {void}
-     */
     function start() {
       if (state.running || state.reduced || !state.visible) return;
       if (document.hidden) return;
@@ -1727,19 +1158,13 @@
       state.raf = window.requestAnimationFrame(frame);
     }
 
-    /**
-     * @returns {void}
-     */
     function stop() {
       state.running = false;
-      // Never leave stale dust behind: the next start repaints the
-      // overlay from the pure scroll state anyway.
       try {
         if (domContext && overlayCanvas) {
           domContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         }
       } catch (_overlayErr) {
-        /* overlay clearing is best-effort */
       }
       if (state.raf) {
         window.cancelAnimationFrame(state.raf);
@@ -1747,13 +1172,6 @@
       }
     }
 
-    // Scattered flight for boot, motion-toggle and replay (click and the
-    // Hero button). Afterwards the word returns to the scroll scrub.
-    // This flight is the entrance animation, not the disintegration.
-    /**
-     * @param {WordState} word
-     * @returns {void}
-     */
     function replayWord(word) {
       if (state.reduced) return;
       word.replay.start = clockMs();
@@ -1769,10 +1187,6 @@
       start();
     }
 
-    /**
-     * @param {string} text
-     * @returns {WordState | null}
-     */
     function findWord(text) {
       for (let w = 0; w < state.words.length; w += 1) {
         if (state.words[w].text === text) return state.words[w];
@@ -1780,27 +1194,16 @@
       return state.words.length ? state.words[0] : null;
     }
 
-    // Reduced motion: static field only (fixed viewport background). The
-    // visible SSR slots carry the resting words, so the canvas never
-    // paints them; nothing bakes and no row ever disintegrates.
-    /**
-     * @returns {void}
-     */
     function drawStatic() {
       drawField(0, 1);
-      // Reduced motion: the overlay stays clear and the DOM is untouched.
       try {
         if (domContext && overlayCanvas) {
           domContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         }
       } catch (_overlayErr) {
-        /* overlay clearing is best-effort */
       }
     }
 
-    /**
-     * @returns {void}
-     */
     function resize() {
       stop();
       try {
@@ -1819,9 +1222,6 @@
       start();
     }
 
-    // Scroll direction from scrollY deltas, for the intro/replay flight
-    // ordering. The scrub itself reads scrollY in the frame loop, so no
-    // trigger lives here. Never throws into the scroll path.
     try {
       window.addEventListener(
         "scroll",
@@ -1836,14 +1236,10 @@
         { passive: true },
       );
     } catch (_err) {
-      /* scroll direction is optional */
     }
 
-    // Pointer glow only for fine pointers without reduced motion.
-    // Coordinates are client-based: the canvas is fixed fullscreen,
-    // so no rect translation is needed.
     try {
-      on(window, "pointermove", (/** @type {PointerEvent} */ event) => {
+      on(window, "pointermove", (event) => {
         if (!state.fine || state.reduced) return;
         state.pointer.x = event.clientX;
         state.pointer.y = event.clientY;
@@ -1853,26 +1249,20 @@
         state.pointer.active = false;
       });
     } catch (_err) {
-      /* pointer glow is optional */
     }
 
-    // Click inside a word anchor replays its scattered entrance flight.
-    // Clicks on links and buttons are ignored. The canvas is
-    // pointer-transparent and the SSR slots hide once it paints, so the
-    // hit test uses the anchor rects measured every frame.
     try {
-      /** @type {Pixel | null} */
       let clickDown = null;
-      window.addEventListener("pointerdown", (/** @type {Event} */ event) => {
-        const pointerEvent = /** @type {PointerEvent} */ (event);
+      window.addEventListener("pointerdown", (event) => {
+        const pointerEvent = (event);
         clickDown = { x: pointerEvent.clientX, y: pointerEvent.clientY };
       });
-      window.addEventListener("pointerup", (/** @type {Event} */ event) => {
+      window.addEventListener("pointerup", (event) => {
         if (!clickDown || state.reduced) {
           clickDown = null;
           return;
         }
-        const pointerEvent = /** @type {PointerEvent} */ (event);
+        const pointerEvent = (event);
         const dx = pointerEvent.clientX - clickDown.x;
         const dy = pointerEvent.clientY - clickDown.y;
         clickDown = null;
@@ -1901,12 +1291,8 @@
         clickDown = null;
       });
     } catch (_err) {
-      /* replay is optional */
     }
 
-    // Replay: the Hero button ("reproducir animación de entrada")
-    // dispatches this event on activation. It replays the scattered
-    // entrance flight (reduced motion stays a no-op).
     try {
       window.addEventListener("porfolio:replay", () => {
         if (state.reduced) return;
@@ -1914,16 +1300,15 @@
         if (hero) replayWord(hero);
       });
     } catch (_err) {
-      /* replay is optional */
     }
 
     if (typeof IntersectionObserver === "function") {
       try {
         const main = document.querySelector("main");
         const observer = new IntersectionObserver(
-          (/** @type {IntersectionObserverEntry[]} */ entries) => {
+          (entries) => {
             state.visible = entries.some(
-              (/** @type {IntersectionObserverEntry} */ entry) => entry.isIntersecting,
+              (entry) => entry.isIntersecting,
             );
             if (state.visible) {
               if (state.reduced) drawStatic();
@@ -1936,7 +1321,6 @@
         );
         if (main) observer.observe(main);
       } catch (_err) {
-        /* observer is optional */
       }
     }
 
@@ -1949,10 +1333,6 @@
     });
 
     if (reduceQuery) {
-      /**
-       * @param {MediaQueryListEvent} event
-       * @returns {void}
-       */
       const onMotionChange = (event) => {
         state.reduced = event.matches;
         stop();
@@ -1969,16 +1349,12 @@
             resize();
             const hero = findWord("ARAGI");
             if (hero) replayWord(hero);
-            // Leaving reduced motion: strips never baked (reduced never
-            // bakes), so arm the queue now; words paint rest until each
-            // strip lands. A null module leaves them whole, as at boot.
             try {
               void ensureTtfx().then((mod) => {
                 if (!mod || state.reduced) return;
                 queueBakes(mod);
               });
             } catch (_bakeErr) {
-              /* words stay whole */
             }
           }
         } catch (_err) {
@@ -1992,22 +1368,15 @@
           reduceQuery.addListener(onMotionChange);
         }
       } catch (_err) {
-        /* optional */
       }
     }
 
-    /** @type {number} */
     let resizeTimer = 0;
     window.addEventListener("resize", () => {
       if (resizeTimer) window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(resize, 150);
     });
 
-    // Boot: static field for reduced motion (SSR slots stay visible,
-    // nothing bakes); otherwise the field dots fade in while the hero
-    // word enters with its scattered intro flight, both words rest at
-    // home afterwards, and the strips bake
-    // off the critical path (words paint rest until their strip lands).
     try {
       if (!rebuild()) {
         finishSlotsVisible();
@@ -2019,19 +1388,12 @@
           : 0;
         state.lastScrollY = y;
       } catch (_err) {
-        /* scroll direction is optional */
       }
       if (state.reduced) {
         drawStatic();
         finishSlotsVisible();
         return;
       }
-      // Boot flight targets what the visitor actually sees. Browsers
-      // restore scroll on reload, so the hero is not always on screen:
-      // always playing ARAGI burns the entrance off-screen while the
-      // on-screen wordmark appears static. Animate every anchor at
-      // least partially in the viewport; fall back to the hero when
-      // none is (odd first-paint geometries).
       const vh = state.cssH > 0
         ? state.cssH
         : typeof window.innerHeight === "number"
@@ -2060,17 +1422,12 @@
       paintBackground();
       hideSlotsAfterFirstPaint();
       start();
-      // Load the wasm bundle off the critical path, then arm the
-      // incremental bake queue (words first, then DOM, sliced from the
-      // paint loop). A null module or a null strip leaves words whole;
-      // rest painting and the field scrub continue untouched.
       try {
         void ensureTtfx().then((mod) => {
           if (!mod || state.reduced) return;
           queueBakes(mod);
         });
       } catch (_err) {
-        /* words stay whole */
       }
     } catch (_err) {
       finishSlotsVisible();

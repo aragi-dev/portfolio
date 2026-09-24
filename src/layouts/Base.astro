@@ -47,9 +47,6 @@ const {
     <link rel="canonical" href="https://aragi.me/" />
     <title>{title}</title>
     <script is:inline>
-      // Pre-hide the SSR wordmark to avoid a flash before the canvas
-      // entry effect. Mirrors the original etch-pending gate with its
-      // own 5000ms timeout; independent of the canvas fallback.
       try {
         if (
           window.matchMedia &&

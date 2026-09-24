@@ -1,12 +1,8 @@
 :root {
-  /* Solitude — minimal grayscale (live tokens only). The TS twin of
-     the field grays + band cuts lives in lib/palette.ts: keep the
-     hexes in sync when the palette changes. */
   --bg: #101315;
   --fg: #cacccc;
   --muted-2: #9fa5a9;
 
-  /* Pixel field — dim Solitude grays for the hero canvas. */
   --field-bg: #080a0b;
   --field-dim: #2a2e30;
   --field-mid: #4e5457;
@@ -14,7 +10,6 @@
   --field-hover: #a1a7aa;
   --field-crest: #cccfd1;
 
-  /* Omarchy-site system */
   --font-family: 'JetBrains Mono', ui-monospace, monospace;
   --font-size: clamp(0.625rem, 1.25vw, 1rem);
   --font-size-small: 80%;

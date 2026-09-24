@@ -1,10 +1,6 @@
-/* Pixel page — fixed-viewport canvas behind two full-height sections.
-   Layout only; every color comes from the Solitude tokens. */
-
 .hero-pixel {
   position: relative;
   isolation: isolate;
-  /* Single screen: exact viewport height, fallback first. */
   height: 100vh;
   height: 100svh;
   display: flex;
@@ -12,7 +8,6 @@
   justify-content: center;
 }
 
-/* Fixed viewport canvas behind the content. */
 .pixel-field {
   position: fixed;
   inset: 0;
@@ -25,10 +20,6 @@
   background: var(--field-bg, #080a0b);
 }
 
-/* DOM disintegration overlay: fixed canvas above the content, used ONLY
-   for DOM disintegration (row erasure + baked dust). It never captures
-   pointer events, so the live DOM underneath stays fully interactive;
-   while a row is whole it paints nothing and the DOM shows crisp. */
 .pixel-dom-overlay {
   position: fixed;
   inset: 0;
@@ -44,17 +35,12 @@
 .hero-inner {
   position: relative;
   z-index: 1;
-  /* Wide centered wordmark slot: full width up to the viewport cap. */
   width: 100%;
   max-width: min(88vw, 90rem);
   margin-inline: auto;
   padding-inline: 0;
 }
 
-/* Masked gradient block: SVG mask + aspect-ratio come from inline style.
-   The div scales with its width, so the wordmark is fluid by default.
-   ARAGI slot matches the original cell: 38rem over 57 columns keeps the
-   same ~13px cell as the reference 44vw over 81 columns. */
 .pixel-wordmark {
   width: min(80vw, 38rem);
   max-width: none;
@@ -73,7 +59,6 @@
   -webkit-mask-size: 100% 100%;
 }
 
-/* Hero byline: sits right under the ARAGI wordmark. */
 .hero-inner {
   text-align: center;
 }
@@ -89,17 +74,11 @@
   letter-spacing: 0.32em;
   text-indent: 0.32em;
   color: var(--muted-2, #9fa5a9);
-  /* Same hover language as the wordmark pointer glow: lifts to crest. */
   transition:
     color var(--transition),
     text-shadow var(--transition);
 }
 
-/* Entrance: fades + rises AFTER the wordmark intro flight lands.
-   The ARAGI scattered flight runs INTRO_MS (1600ms) in PixelField.astro,
-   so this delay keeps the byline sequenced behind it on boot and on every
-   replay. The backwards fill (both) holds it invisible during the wait.
-   Re-triggered from Hero.astro on the shared porfolio:replay event. */
 @keyframes hero-byline-in {
   from {
     opacity: 0;
@@ -129,25 +108,18 @@
   }
 }
 
-/* INFO slot: same cell size as ARAGI (47 over 57 of the hero width). */
 .info-section .pixel-wordmark {
   width: min(66vw, 31.3333rem);
 }
 
-/* Hidden resting wordmark once the canvas owns the page.
-   Visibility keeps the layout slot measurable for lattice anchoring. */
 .pixel-wordmark.is-hidden {
   visibility: hidden;
 }
 
-/* SSR pre-hide before the first canvas paint. Visibility preserves
-   the layout slot so the lattice can measure it. The canvas fallback
-   (5s timeout) brings the slot back if no frame ever lands. */
 html.wordmark-held [data-wordmark] {
   visibility: hidden;
 }
 
-/* Accessible name for the decorative wordmark. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -161,8 +133,6 @@ html.wordmark-held [data-wordmark] {
   border: 0;
 }
 
-/* Keyboard-only replay control and skip-link: visually hidden until focused,
-   then shown as a pill with a visible outline. */
 .sr-only-focusable,
 .skip-link {
   position: absolute;
@@ -200,9 +170,6 @@ html.wordmark-held [data-wordmark] {
   outline-offset: 2px;
 }
 
-/* WCAG 2.5.8: keyboard-only replay target meets the 24px minimum once
-   visible. Scoped to :focus-visible so the visually-hidden resting state
-   keeps the 1px sr-only slot. */
 .hero-pixel [data-replay]:focus-visible {
   min-height: 24px;
   min-width: 24px;
@@ -216,13 +183,10 @@ html.wordmark-held [data-wordmark] {
 
 @media (prefers-reduced-motion: reduce) {
   .pixel-field {
-    /* Static canvas: no animation runs (handled in PixelField script). */
     animation: none;
   }
 }
 
-/* Info section: second screen, same viewport height, content centered
-   above the fixed canvas. */
 .info-section {
   position: relative;
   isolation: isolate;
@@ -245,7 +209,6 @@ html.wordmark-held [data-wordmark] {
   align-items: center;
 }
 
-/* Info text block: frameless, everything stacked and centered. */
 .info-box {
   border: none;
   background: transparent;
@@ -269,10 +232,6 @@ html.wordmark-held [data-wordmark] {
   text-align: center;
 }
 
-/* Entrance for the live-DOM info content (bio text + email button with
-   its pixel icon): fade + rise, sequenced after the INFO flight at boot
-   (info-enter-boot, 1.65s like the hero byline) or immediate on first
-   scroll into view. The icon rides inside the button. */
 @keyframes info-rise-in {
   from {
     opacity: 0;
@@ -304,8 +263,6 @@ html.wordmark-held [data-wordmark] {
   }
 }
 
-/* Contact controls: the email copy button and the social links share one
-   frameless voice — icon + label, crest glow on hover, no box. */
 .info-email,
 .info-social-link {
   display: inline-flex;
@@ -332,8 +289,6 @@ html.wordmark-held [data-wordmark] {
   cursor: pointer;
 }
 
-/* Icon slot: envelope and check stack in the same cell so swapping
-   feedback never shifts the button layout. */
 .info-email-icon {
   display: inline-grid;
   align-items: center;
@@ -349,10 +304,6 @@ html.wordmark-held [data-wordmark] {
   visibility: hidden;
 }
 
-/* Pixel envelope + check + social glyphs: same language as the
-   wordmarks — pixel-grid SVG mask (inline style) over the 5-band field
-   grayscale. Widths are tuned per aspect so every glyph renders at the
-   same height next to the text. */
 .pixel-envelope,
 .pixel-check,
 .pixel-github,
@@ -384,9 +335,6 @@ html.wordmark-held [data-wordmark] {
   -webkit-mask-size: 100% 100%;
 }
 
-/* Per-glyph widths: aspects differ (envelope 17:11, check 12:8,
-   github 13:10, linkedin 1:1), so widths are tuned for one shared
-   glyph height next to the text. */
 .pixel-envelope,
 .pixel-check {
   width: 1.9em;
@@ -412,8 +360,6 @@ html.wordmark-held [data-wordmark] {
   text-shadow: 0 0 14px rgba(204, 207, 209, 0.35);
 }
 
-/* Hover lights the glyph to solid crest — same glow language as the
-   byline, no box. */
 .info-email:hover .pixel-envelope,
 .info-email:hover .pixel-check,
 .info-social-link:hover .pixel-github,
@@ -427,8 +373,6 @@ html.wordmark-held [data-wordmark] {
   outline-offset: 2px;
 }
 
-/* Contact line: email + socials share one centered line, wrapping
-   gracefully on narrow screens. */
 .info-contact {
   display: flex;
   justify-content: center;
@@ -437,8 +381,6 @@ html.wordmark-held [data-wordmark] {
   gap: var(--space-small) var(--space-large);
 }
 
-/* Social row: frameless links beside the email, same mono voice and the
-   same glow-on-hover language. Wraps on narrow screens. */
 .info-social {
   display: flex;
   justify-content: center;
@@ -453,7 +395,6 @@ html.wordmark-held [data-wordmark] {
   padding: var(--space-small);
 }
 
-/* The social row closes the entrance: text, then email, then socials. */
 .info-social.info-enter {
   animation-delay: calc(var(--info-enter-delay) + 0.3s);
 }
