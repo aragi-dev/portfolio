@@ -1,0 +1,72 @@
+---
+import '../styles/tokens.css';
+import '../styles/reset.css';
+import '../styles/global.css';
+import { profile } from '../data/portfolio';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Aldo Matu (ARAGI) — Desarrollador Full-Stack en México',
+  description = 'Desarrollador Full-Stack · ARAGI. Construyo interfaces rápidas y sistemas mantenibles con estética de terminal, sólidos por dentro y listos para producción.',
+} = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://aragi.me/" />
+    <meta property="og:locale" content="es_ES" />
+    <meta property="og:image" content="https://aragi.me/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://aragi.me/favicon.svg" />
+    <meta name="theme-color" content="#080a0b" />
+    <script
+      type="application/ld+json"
+      set:html={JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "Person",
+        name: "ARAGI",
+        jobTitle: "Desarrollador Full-Stack",
+        url: "https://aragi.me",
+        sameAs: [profile.github, profile.linkedin],
+      })}
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://aragi.me/" />
+    <title>{title}</title>
+    <script is:inline>
+      // Pre-hide the SSR wordmark to avoid a flash before the canvas
+      // entry effect. Mirrors the original etch-pending gate with its
+      // own 5000ms timeout; independent of the canvas fallback.
+      try {
+        if (
+          window.matchMedia &&
+          !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ) {
+          document.documentElement.classList.add("wordmark-held");
+          window.setTimeout(function () {
+            try {
+              document.documentElement.classList.remove("wordmark-held");
+            } catch (_e) {}
+          }, 5000);
+        }
+      } catch (_e) {}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Saltar al contenido</a>
+    <slot />
+  </body>
+</html>

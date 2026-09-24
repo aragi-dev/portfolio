@@ -1,0 +1,76 @@
+---
+// PixelGlyph — every pixel mask on the page (ARAGI / INFO wordmarks,
+// envelope, check, github, linkedin) in one component: pixel-grid SVG
+// mask over the 5-band grayscale gradient (see lib/palette). Bitmaps and
+// the wordmark anchor metadata live in lib/glyph-bitmaps; only those
+// vary per glyph. Wordmarks additionally carry the canvas lattice
+// attributes (data-wordmark et al.) and the inline gradient background —
+// PixelField validates them, so keep them exact. Decorative only
+// (aria-hidden); surrounding content carries the accessible names.
+import { GLYPHS, type GlyphName } from "../lib/glyph-bitmaps";
+import { WORDMARK_GRADIENT } from "../lib/palette";
+
+interface Props {
+  glyph: GlyphName;
+}
+
+const { glyph } = Astro.props;
+const spec = GLYPHS[glyph];
+const rows = spec.rows;
+const wordmark = spec.wordmark;
+
+// Chunky cell multiplier, same for every mask.
+const cell = 2;
+
+function glyphCells(cellSize: number): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (let y = 0; y < rows.length; y += 1) {
+    const row = rows[y];
+    for (let x = 0; x < row.length; x += 1) {
+      if (row[x] === "1") out.push({ x: x * cellSize, y: y * cellSize });
+    }
+  }
+  return out;
+}
+
+const bitmapWidth = rows[0].length;
+const bitmapHeight = rows.length;
+const width = bitmapWidth * cell;
+const height = bitmapHeight * cell;
+const cells = glyphCells(cell);
+
+// Guard against empty grids.
+const gridWidth = Math.max(width, cell);
+const gridHeight = Math.max(height, cell);
+
+const rects = cells
+  .map(
+    (pixel) =>
+      `<rect x="${pixel.x}" y="${pixel.y}" width="${cell}" height="${cell}"/>`,
+  )
+  .join("");
+const svg =
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${gridWidth} ${gridHeight}" ` +
+  `shape-rendering="crispEdges" fill="#fff">${rects}</svg>`;
+const maskImage = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+
+// Unscaled bitmap size anchors the canvas lattice
+// (cell = slotWidth / cols, same text at scale 1).
+const unscaled = { width: bitmapWidth, height: bitmapHeight };
+
+const style = wordmark
+  ? `aspect-ratio: ${gridWidth} / ${gridHeight}; background: ${WORDMARK_GRADIENT}; --m: ${maskImage};`
+  : `aspect-ratio: ${gridWidth} / ${gridHeight}; --m: ${maskImage};`;
+---
+
+<div
+  class={spec.cls}
+  aria-hidden="true"
+  data-wordmark={wordmark ? "" : undefined}
+  data-hero-wordmark={wordmark?.anchor === "hero" ? "" : undefined}
+  data-anchor={wordmark?.anchor}
+  data-text={wordmark?.text}
+  data-cols={wordmark ? unscaled.width : undefined}
+  data-rows={wordmark ? unscaled.height : undefined}
+  style={style}
+/>

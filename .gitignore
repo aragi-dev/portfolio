@@ -1,0 +1,14 @@
+# Local Pi runtime state
+.atl/
+
+# Astro
+dist/
+.astro/
+node_modules/
+.env
+
+# Regenerable tooling caches
+.codegraph/
+
+# Legacy agent mirror (Claude ya soporta agents via .agents/)
+.claude/

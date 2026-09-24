@@ -1,0 +1,10 @@
+/* Global base for the two-screen ARAGI page: normal document scroll. */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+}

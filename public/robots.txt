@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aragi.me/sitemap-index.xml

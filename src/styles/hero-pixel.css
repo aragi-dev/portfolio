@@ -1,0 +1,459 @@
+/* Pixel page — fixed-viewport canvas behind two full-height sections.
+   Layout only; every color comes from the Solitude tokens. */
+
+.hero-pixel {
+  position: relative;
+  isolation: isolate;
+  /* Single screen: exact viewport height, fallback first. */
+  height: 100vh;
+  height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Fixed viewport canvas behind the content. */
+.pixel-field {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  display: block;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--field-bg, #080a0b);
+}
+
+/* DOM disintegration overlay: fixed canvas above the content, used ONLY
+   for DOM disintegration (row erasure + baked dust). It never captures
+   pointer events, so the live DOM underneath stays fully interactive;
+   while a row is whole it paints nothing and the DOM shows crisp. */
+.pixel-dom-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  display: block;
+  pointer-events: none;
+  z-index: 3;
+  background: transparent;
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  /* Wide centered wordmark slot: full width up to the viewport cap. */
+  width: 100%;
+  max-width: min(88vw, 90rem);
+  margin-inline: auto;
+  padding-inline: 0;
+}
+
+/* Masked gradient block: SVG mask + aspect-ratio come from inline style.
+   The div scales with its width, so the wordmark is fluid by default.
+   ARAGI slot matches the original cell: 38rem over 57 columns keeps the
+   same ~13px cell as the reference 44vw over 81 columns. */
+.pixel-wordmark {
+  width: min(80vw, 38rem);
+  max-width: none;
+  margin-inline: auto;
+  margin-block: var(--space-medium) var(--space-large);
+  display: block;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  mask-image: var(--m);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: 100% 100%;
+  -webkit-mask-image: var(--m);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: 100% 100%;
+}
+
+/* Hero byline: sits right under the ARAGI wordmark. */
+.hero-inner {
+  text-align: center;
+}
+
+.hero-inner .pixel-wordmark {
+  margin-block-end: var(--space-medium);
+}
+
+.hero-byline {
+  margin: 0;
+  font-family: var(--font-family, ui-monospace, monospace);
+  font-size: var(--font-size, 1rem);
+  letter-spacing: 0.32em;
+  text-indent: 0.32em;
+  color: var(--muted-2, #9fa5a9);
+  /* Same hover language as the wordmark pointer glow: lifts to crest. */
+  transition:
+    color var(--transition),
+    text-shadow var(--transition);
+}
+
+/* Entrance: fades + rises AFTER the wordmark intro flight lands.
+   The ARAGI scattered flight runs INTRO_MS (1600ms) in PixelField.astro,
+   so this delay keeps the byline sequenced behind it on boot and on every
+   replay. The backwards fill (both) holds it invisible during the wait.
+   Re-triggered from Hero.astro on the shared porfolio:replay event. */
+@keyframes hero-byline-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hero-byline-enter {
+  animation: hero-byline-in 1s ease-out 1.65s both;
+}
+
+@media (hover: hover) {
+  .hero-byline:hover {
+    color: var(--field-crest, #cccfd1);
+    text-shadow: 0 0 14px rgba(204, 207, 209, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-byline-enter {
+    animation: none;
+  }
+}
+
+/* INFO slot: same cell size as ARAGI (47 over 57 of the hero width). */
+.info-section .pixel-wordmark {
+  width: min(66vw, 31.3333rem);
+}
+
+/* Hidden resting wordmark once the canvas owns the page.
+   Visibility keeps the layout slot measurable for lattice anchoring. */
+.pixel-wordmark.is-hidden {
+  visibility: hidden;
+}
+
+/* SSR pre-hide before the first canvas paint. Visibility preserves
+   the layout slot so the lattice can measure it. The canvas fallback
+   (5s timeout) brings the slot back if no frame ever lands. */
+html.wordmark-held [data-wordmark] {
+  visibility: hidden;
+}
+
+/* Accessible name for the decorative wordmark. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard-only replay control and skip-link: visually hidden until focused,
+   then shown as a pill with a visible outline. */
+.sr-only-focusable,
+.skip-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus-visible,
+.skip-link:focus-visible {
+  width: auto;
+  height: auto;
+  min-height: 24px;
+  min-width: 24px;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: nowrap;
+  top: var(--space-medium);
+  left: var(--space-medium);
+  z-index: 2;
+  padding: var(--space-small) var(--space-medium);
+  border-radius: 999px;
+  background: var(--field-crest, #cccfd1);
+  color: #080a0b;
+  font-size: var(--font-size-small);
+  outline: 2px solid var(--field-hover, #a1a7aa);
+  outline-offset: 2px;
+}
+
+/* WCAG 2.5.8: keyboard-only replay target meets the 24px minimum once
+   visible. Scoped to :focus-visible so the visually-hidden resting state
+   keeps the 1px sr-only slot. */
+.hero-pixel [data-replay]:focus-visible {
+  min-height: 24px;
+  min-width: 24px;
+}
+
+@media (max-width: 40rem) {
+  .pixel-wordmark {
+    margin-block: var(--space-small) var(--space-medium);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-field {
+    /* Static canvas: no animation runs (handled in PixelField script). */
+    animation: none;
+  }
+}
+
+/* Info section: second screen, same viewport height, content centered
+   above the fixed canvas. */
+.info-section {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: var(--space-x-large);
+}
+
+.info-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: min(88vw, 90rem);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Info text block: frameless, everything stacked and centered. */
+.info-box {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  color: var(--fg, #cacccc);
+  width: min(60ch, calc(100% - 2rem));
+  max-width: 60ch;
+}
+
+.info-text {
+  margin: 0 0 var(--space-medium);
+  font-size: var(--font-size, 1rem);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* Entrance for the live-DOM info content (bio text + email button with
+   its pixel icon): fade + rise, sequenced after the INFO flight at boot
+   (info-enter-boot, 1.65s like the hero byline) or immediate on first
+   scroll into view. The icon rides inside the button. */
+@keyframes info-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.info-enter {
+  --info-enter-delay: 0s;
+  animation: info-rise-in 0.9s ease-out var(--info-enter-delay) both;
+}
+
+.info-email.info-enter {
+  animation-delay: calc(var(--info-enter-delay) + 0.15s);
+}
+
+.info-enter-boot {
+  --info-enter-delay: 1.65s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info-enter {
+    animation: none;
+  }
+}
+
+/* Contact controls: the email copy button and the social links share one
+   frameless voice — icon + label, crest glow on hover, no box. */
+.info-email,
+.info-social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  min-height: 24px;
+  min-width: 24px;
+  font-size: var(--font-size-small);
+  letter-spacing: 0.03em;
+  color: var(--field-crest, #cccfd1);
+  background: transparent;
+  transition:
+    color var(--transition),
+    text-shadow var(--transition);
+}
+
+.info-email {
+  margin: 0;
+  font-family: inherit;
+  border: none;
+  border-radius: 0;
+  padding: var(--space-small) var(--space-medium);
+  cursor: pointer;
+}
+
+/* Icon slot: envelope and check stack in the same cell so swapping
+   feedback never shifts the button layout. */
+.info-email-icon {
+  display: inline-grid;
+  align-items: center;
+  justify-items: center;
+  flex: none;
+}
+
+.info-email-icon > * {
+  grid-area: 1 / 1;
+}
+
+.info-email-icon .is-hidden {
+  visibility: hidden;
+}
+
+/* Pixel envelope + check + social glyphs: same language as the
+   wordmarks — pixel-grid SVG mask (inline style) over the 5-band field
+   grayscale. Widths are tuned per aspect so every glyph renders at the
+   same height next to the text. */
+.pixel-envelope,
+.pixel-check,
+.pixel-github,
+.pixel-linkedin {
+  display: inline-block;
+  flex: none;
+  background: linear-gradient(
+    to bottom,
+    #cccfd1 0%,
+    #cccfd1 26.3%,
+    #a1a7aa 26.3%,
+    #a1a7aa 36.8%,
+    #798186 36.8%,
+    #798186 57.9%,
+    #4e5457 57.9%,
+    #4e5457 73.7%,
+    #2a2e30 73.7%,
+    #2a2e30 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  mask-image: var(--m);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: 100% 100%;
+  -webkit-mask-image: var(--m);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: 100% 100%;
+}
+
+/* Per-glyph widths: aspects differ (envelope 17:11, check 12:8,
+   github 13:10, linkedin 1:1), so widths are tuned for one shared
+   glyph height next to the text. */
+.pixel-envelope,
+.pixel-check {
+  width: 1.9em;
+}
+
+.pixel-github {
+  width: 1.6em;
+}
+
+.pixel-linkedin {
+  width: 1.25em;
+}
+
+.info-email-text,
+.info-social-label {
+  line-height: 1;
+}
+
+.info-email:hover,
+.info-social-link:hover {
+  background: transparent;
+  color: var(--field-crest, #cccfd1);
+  text-shadow: 0 0 14px rgba(204, 207, 209, 0.35);
+}
+
+/* Hover lights the glyph to solid crest — same glow language as the
+   byline, no box. */
+.info-email:hover .pixel-envelope,
+.info-email:hover .pixel-check,
+.info-social-link:hover .pixel-github,
+.info-social-link:hover .pixel-linkedin {
+  background: var(--field-crest, #cccfd1);
+}
+
+.info-email:focus-visible,
+.info-social-link:focus-visible {
+  outline: 2px solid var(--field-hover, #a1a7aa);
+  outline-offset: 2px;
+}
+
+/* Contact line: email + socials share one centered line, wrapping
+   gracefully on narrow screens. */
+.info-contact {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-small) var(--space-large);
+}
+
+/* Social row: frameless links beside the email, same mono voice and the
+   same glow-on-hover language. Wraps on narrow screens. */
+.info-social {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-small) var(--space-large);
+  margin: 0;
+}
+
+.info-social-link {
+  text-decoration: none;
+  padding: var(--space-small);
+}
+
+/* The social row closes the entrance: text, then email, then socials. */
+.info-social.info-enter {
+  animation-delay: calc(var(--info-enter-delay) + 0.3s);
+}

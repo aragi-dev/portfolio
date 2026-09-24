@@ -1,0 +1,178 @@
+---
+import { profile } from "../data/portfolio";
+import PixelGlyph from "./PixelGlyph.astro";
+import "../styles/hero-pixel.css";
+---
+
+<section class="info-section" aria-labelledby="info-title">
+  <div class="info-content">
+    <PixelGlyph glyph="info" />
+    <h2 id="info-title" class="sr-only">Información</h2>
+    <div class="info-box" data-disintegrate>
+      <p class="info-text info-enter info-enter-boot">{profile.info}</p>
+      <div class="info-contact">
+      <button
+        type="button"
+        class="info-email info-enter info-enter-boot"
+        data-email={profile.email}
+        aria-live="polite"
+      >
+        <span class="info-email-icon" aria-hidden="true">
+          <PixelGlyph glyph="envelope" />
+          <PixelGlyph glyph="check" />
+        </span>
+        <span class="info-email-text">{profile.email}</span>
+        <span class="sr-only" data-copy-feedback></span>
+      </button>
+      <div class="info-social info-enter info-enter-boot">
+        <a
+          class="info-social-link"
+          href={profile.github}
+          target="_blank"
+          rel="noreferrer noopener"
+          aria-label="GitHub — aragi-dev"
+        >
+          <PixelGlyph glyph="github" />
+          <span class="info-social-label">aragi-dev</span>
+        </a>
+        <a
+          class="info-social-link"
+          href={profile.linkedin}
+          target="_blank"
+          rel="noreferrer noopener"
+          aria-label="LinkedIn — Aldo Matu"
+        >
+          <PixelGlyph glyph="linkedin" />
+          <span class="info-social-label">aldo-matu</span>
+        </a>
+      </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Email copy with a clipboard fallback for older browsers.
+  const emailButton = document.querySelector(
+    ".info-section .info-email",
+  );
+
+  const emailText = emailButton.querySelector(".info-email-text");
+  const envelopeIcon = emailButton.querySelector(".pixel-envelope");
+  const checkIcon = emailButton.querySelector(".pixel-check");
+  const copyFeedback = emailButton.querySelector("[data-copy-feedback]");
+
+  // Entrance for the bio text + email button (the pixel icon rides
+  // inside the button). SSR carries info-enter + info-enter-boot so a
+  // section that loads on screen rises right after the INFO flight.
+  // When it loads off-screen the classes are dropped and the first
+  // scroll into view replays them with no delay, once — same gating
+  // rule as the hero byline and the canvas boot flight.
+  const infoBox = document.querySelector(".info-section .info-box");
+  // Every entrance target: bio text, email button, social row. New
+  // .info-enter children join automatically.
+  const infoTargets = infoBox instanceof HTMLElement
+    ? Array.from(infoBox.querySelectorAll(".info-enter")).filter(
+      (el) => el instanceof HTMLElement,
+    )
+    : [];
+  const reduceMotion = typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (
+    infoBox instanceof HTMLElement &&
+    infoTargets.length > 0 &&
+    !reduceMotion
+  ) {
+    const boxRect = infoBox.getBoundingClientRect();
+    const boxInView = typeof window.innerHeight === "number" &&
+      boxRect.bottom > 0 &&
+      boxRect.top < window.innerHeight;
+    if (!boxInView) {
+      for (const el of infoTargets) {
+        if (el instanceof HTMLElement) {
+          el.classList.remove("info-enter", "info-enter-boot");
+        }
+      }
+      const showOnFirstView = () => {
+        for (const el of infoTargets) {
+          if (!(el instanceof HTMLElement)) continue;
+          el.classList.remove("info-enter-boot");
+          el.classList.add("info-enter");
+        }
+      };
+      if (typeof IntersectionObserver === "function") {
+        const infoObserver = new IntersectionObserver((entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          infoObserver.disconnect();
+          showOnFirstView();
+        }, { threshold: 0 });
+        infoObserver.observe(infoBox);
+      } else {
+        showOnFirstView();
+      }
+    }
+  } else {
+    // Reduced motion or unexpected DOM: content stays static and visible.
+    for (const el of infoTargets) {
+      if (el instanceof HTMLElement) {
+        el.classList.remove("info-enter", "info-enter-boot");
+      }
+    }
+  }
+
+  /** @type {number} */
+  let copyTimer = 0;
+
+  // Copy the email address with a clipboard fallback for older browsers.
+  // The address text never changes: feedback swaps the envelope icon for
+  // the pixel check and announces through the live region.
+  emailButton?.addEventListener("click", async () => {
+    if (!(emailButton instanceof HTMLButtonElement)) return;
+    const address =
+      emailButton.getAttribute("data-email") ||
+      emailText?.textContent ||
+      emailButton.textContent ||
+      "";
+    /**
+     * @returns {void}
+     */
+    const showFeedback = () => {
+      envelopeIcon?.classList.add("is-hidden");
+      checkIcon?.classList.remove("is-hidden");
+      if (copyFeedback) copyFeedback.textContent = "copiado";
+      if (copyTimer) window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => {
+        checkIcon?.classList.add("is-hidden");
+        envelopeIcon?.classList.remove("is-hidden");
+        if (copyFeedback) copyFeedback.textContent = "";
+        copyTimer = 0;
+      }, 2000);
+    };
+    try {
+      if (
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(address.trim());
+        showFeedback();
+        return;
+      }
+      throw new Error("clipboard unavailable");
+    } catch (_err) {
+      try {
+        const area = document.createElement("textarea");
+        area.value = address.trim();
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        document.body.removeChild(area);
+        showFeedback();
+      } catch (_fallbackErr) {
+        /* copy is best-effort; keep the address visible */
+      }
+    }
+  });
+</script>
